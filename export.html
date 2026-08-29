@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <title>Sammelbestellung</title>
+</head>
+<body>
+  <div class="wrap">
+    <p class="intro" id="info">Sammle Daten aller Karten…</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button id="dl" class="btn btn-primary" disabled>⬇ CSV herunterladen</button>
+      <button id="copyToggle" class="btn btn-ghost">Text zum Kopieren</button>
+    </div>
+    <textarea id="csvText" class="field" style="display:none;margin-top:12px;min-height:140px;width:100%" readonly></textarea>
+  </div>
+
+<script src="./config.js"></script>
+<script>
+  var t = TrelloPowerUp.iframe();
+  var csv = '';
+
+  function csvEscape(v){ v=(v==null?'':String(v)); if(/[";\n\r]/.test(v)){ v='"'+v.replace(/"/g,'""')+'"'; } return v; }
+
+  function build(config, records){
+    var head=['Kundennummer','Anrede','Vorname','Nachname','Telefon','Email','Strasse','Hausnummer','PLZ','Stadt','Gruppe','Position','Auswahl','Anzahl'];
+    var rows=[head]; var kunden=0;
+    records.forEach(function(p){
+      if(!p) return;
+      var base=[p.kundennummer,p.anrede,p.vorname,p.nachname,p.telefon,p.email,p.strasse,p.hausnummer,p.plz,p.stadt];
+      var had=false;
+      config.groups.forEach(function(g){ g.rows.forEach(function(r){
+        var auswahl=p[r.key]||''; var anzahl=p[r.key+'_anzahl']||'';
+        if(auswahl!=='' || (anzahl!=='' && anzahl!=='0')){ rows.push(base.concat([g.title,r.label,auswahl,anzahl])); had=true; }
+      }); });
+      // Karte ohne Materialpositionen, aber mit Kundennummer/Name -> trotzdem eine Zeile
+      if(!had && (p.kundennummer||p.nachname)){ rows.push(base.concat(['','','',''])); }
+      if(had || p.kundennummer || p.nachname) kunden++;
+    });
+    csv='\ufeff'+rows.map(function(row){ return row.map(csvEscape).join(';'); }).join('\r\n');
+    return { count:kunden, lines:rows.length-1 };
+  }
+
+  function init(){
+    Promise.all([ loadConfig(t), t.cards('id') ]).then(function(res){
+      var config=res[0]; var cards=res[1]||[];
+      return Promise.all(cards.map(function(c){ return t.get(c.id,'shared','projektdaten').catch(function(){return null;}); }))
+        .then(function(list){
+          var info=build(config, list);
+          document.getElementById('info').textContent =
+            info.count+' Karte(n) mit Daten · '+info.lines+' Materialzeile(n). Die Zusatzfelder (Abstand, Schaltschrank) sind bewusst nicht enthalten.';
+          document.getElementById('dl').disabled=false;
+          document.getElementById('csvText').value=csv;
+        });
+    }).catch(function(){
+      document.getElementById('info').textContent='Konnte die Kartendaten nicht laden.';
+    });
+  }
+
+  document.getElementById('dl').addEventListener('click', function(){
+    var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    var url=URL.createObjectURL(blob); var a=document.createElement('a');
+    a.href=url; a.download='smart-nachhaltig_sammelbestellung_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+  });
+  document.getElementById('copyToggle').addEventListener('click', function(){
+    var ta=document.getElementById('csvText');
+    ta.style.display = ta.style.display==='none' ? 'block' : 'none';
+    if(ta.style.display==='block'){ ta.focus(); ta.select(); }
+  });
+
+  init();
+</script>
+</body>
+</html>

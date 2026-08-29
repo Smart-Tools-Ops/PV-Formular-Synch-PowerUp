@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+  <title>Optionen &amp; Farben</title>
+</head>
+<body>
+  <div class="wrap">
+    <p class="intro">Diese Einstellungen gelten boardweit für alle Karten. Änderungen werden automatisch gespeichert. Alle Produkt-Dropdowns sind zu Beginn leer – trage hier deine Artikel ein.</p>
+    <div id="headings"></div>
+    <div id="blocks"></div>
+    <div style="margin-top:16px;display:flex;align-items:center;gap:12px">
+      <button id="done" class="btn btn-primary">Fertig</button>
+      <span id="status" class="status saved">Gespeichert</span>
+    </div>
+  </div>
+
+<script src="./config.js"></script>
+<script>
+  var t = TrelloPowerUp.iframe();
+  var config = null, saveTimer = null, statusEl = null;
+
+  function el(tag, cls, txt){ var e=document.createElement(tag); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e; }
+
+  function scheduleSave(){
+    if(statusEl){ statusEl.textContent='Speichere…'; statusEl.className='status'; }
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(function(){
+      saveConfig(t, config).then(function(){
+        if(statusEl){ statusEl.textContent='Gespeichert ✓'; statusEl.className='status saved'; }
+      }).catch(function(){
+        if(statusEl){ statusEl.textContent='Fehler / evtl. zu viele Optionen'; statusEl.className='status dirty'; }
+      });
+    }, 400);
+  }
+
+  function headingField(labelText, get, set){
+    var w=el('div','head-field');
+    w.appendChild(el('div','head-label',labelText));
+    var i=el('input','head-input'); i.value=get();
+    i.addEventListener('input', function(){ set(i.value); scheduleSave(); });
+    w.appendChild(i); return w;
+  }
+
+  function optionEditor(arr){
+    var box=el('div');
+    var empty=el('p','cfg-empty','Noch keine Optionen – unten hinzufügen.');
+    var ul=el('ul','cfg-options');
+    function syncEmpty(){ empty.style.display=arr.length?'none':'block'; }
+    function addLi(val){
+      var li=el('li'); li.appendChild(el('span',null,val));
+      var rm=el('button','opt-remove','×'); rm.title='Entfernen';
+      rm.addEventListener('click', function(){ var i=arr.indexOf(val); if(i>-1)arr.splice(i,1); li.remove(); syncEmpty(); scheduleSave(); });
+      li.appendChild(rm); ul.appendChild(li);
+    }
+    arr.forEach(addLi);
+    var add=el('div','cfg-add');
+    var inp=el('input'); inp.type='text'; inp.placeholder='Neue Option…';
+    var btn=el('button','opt-add','Hinzufügen');
+    function doAdd(){ var v=inp.value.trim(); if(!v)return; arr.push(v); addLi(v); inp.value=''; syncEmpty(); scheduleSave(); }
+    btn.addEventListener('click', doAdd);
+    inp.addEventListener('keydown', function(e){ if(e.key==='Enter') doAdd(); });
+    add.appendChild(inp); add.appendChild(btn);
+    box.appendChild(empty); box.appendChild(ul); box.appendChild(add); syncEmpty();
+    return box;
+  }
+
+  function swatchRow(obj){
+    var sw=el('div','swatches');
+    PALETTE.forEach(function(c){
+      var b=el('button','swatch g-'+c+(obj.color===c?' active':'')); b.title=c;
+      b.addEventListener('click', function(){
+        obj.color=c;
+        sw.querySelectorAll('.swatch').forEach(function(s){ s.classList.remove('active'); });
+        b.classList.add('active'); scheduleSave();
+      });
+      sw.appendChild(b);
+    });
+    return sw;
+  }
+
+  function labelInput(row){
+    var w=el('div','cfg-label-wrap');
+    w.appendChild(el('span','cfg-pencil','✎'));
+    var i=el('input','cfg-label-input'); i.value=row.label;
+    i.addEventListener('input', function(){ row.label=i.value; scheduleSave(); });
+    w.appendChild(i); return w;
+  }
+
+  function render(){
+    statusEl=document.getElementById('status');
+
+    // Überschriften
+    var h=document.getElementById('headings'); h.innerHTML='';
+    var hb=el('div','cfg-block');
+    hb.appendChild(el('div','cfg-grouptitle','Überschriften'));
+    hb.appendChild(el('div',null,'')); // spacing
+    hb.appendChild(headingField('Kartenbereich (oben)', function(){return config.headings.projekt;}, function(v){config.headings.projekt=v;}));
+    hb.appendChild(headingField('Abschnitt 1', function(){return config.headings.personalien;}, function(v){config.headings.personalien=v;}));
+    hb.appendChild(headingField('Abschnitt 2', function(){return config.headings.planung;}, function(v){config.headings.planung=v;}));
+    h.appendChild(hb);
+
+    var host=document.getElementById('blocks'); host.innerHTML='';
+
+    // Personalien (Farbe + Anrede)
+    var pb=el('div','cfg-block');
+    var pgh=el('div','cfg-grouphead');
+    pgh.appendChild(el('div','cfg-grouptitle', config.headings.personalien));
+    pgh.appendChild(swatchRow(config.personalien));
+    pb.appendChild(pgh);
+    var ar=el('div','cfg-row first');
+    var arl=el('div',null,'Anrede – Auswahl'); arl.style.fontWeight='700'; arl.style.fontSize='13.5px'; arl.style.margin='0 0 9px';
+    ar.appendChild(arl);
+    ar.appendChild(optionEditor(config.personalien.anrede));
+    pb.appendChild(ar);
+    host.appendChild(pb);
+
+    // Planungs-Gruppen
+    config.groups.forEach(function(g){
+      var block=el('div','cfg-block');
+      var gh=el('div','cfg-grouphead');
+      gh.appendChild(el('div','cfg-grouptitle', g.title));
+      gh.appendChild(swatchRow(g));
+      block.appendChild(gh);
+      g.rows.forEach(function(r, idx){
+        var rb=el('div','cfg-row'+(idx===0?' first':''));
+        rb.appendChild(labelInput(r));
+        rb.appendChild(optionEditor(r.options));
+        block.appendChild(rb);
+      });
+      host.appendChild(block);
+    });
+  }
+
+  document.getElementById('done').addEventListener('click', function(){
+    clearTimeout(saveTimer);
+    saveConfig(t, config).then(function(){ t.closePopup(); }).catch(function(){ t.closePopup(); });
+  });
+
+  loadConfig(t).then(function(c){ config=c; render(); });
+</script>
+</body>
+</html>

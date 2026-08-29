@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>smart nachhaltig · Projektdaten Power-Up</title>
+  <script src="https://p.trellocdn.com/power-up.min.js"></script>
+</head>
+<body>
+<script src="./config.js"></script>
+<script src="./sync.js"></script>
+<script>
+  // Absolute Basis-URL dieses Ordners (funktioniert automatisch, egal wohin hochgeladen)
+  var BASE = window.location.href.replace(/\/[^\/]*$/, '/');
+  var ICON = BASE + 'icon.svg';
+
+  TrelloPowerUp.initialize({
+    'card-back-section': function (t) {
+      return {
+        title: 'Projektdaten',
+        icon: ICON,
+        content: { type:'iframe', url: t.signUrl('./form.html'), height: 640 }
+      };
+    },
+
+    'card-badges': function (t) {
+      return t.get('card', 'shared', 'projektdaten').then(function (d) {
+        if (!d) return [];
+        var badges = [];
+        if (d.kundennummer) badges.push({ text: 'Kd ' + d.kundennummer });
+        return badges;
+      });
+    },
+
+    'card-detail-badges': function (t) {
+      return t.get('card', 'shared', 'projektdaten').then(function (d) {
+        if (!d) return [];
+        var badges = [];
+        var name = ((d.vorname || '') + ' ' + (d.nachname || '')).trim();
+        if (name) badges.push({ title: 'Kunde', text: name });
+        return badges;
+      });
+    },
+
+    'show-settings': function (t) {
+      return t.popup({ title: 'Dropdown-Optionen & Farben', url: './settings.html', height: 620 });
+    },
+
+    'board-buttons': function () {
+      return [
+        { icon: { dark: ICON, light: ICON }, text: 'Projektdaten-Optionen',
+          callback: function (t) { return t.popup({ title: 'Dropdown-Optionen & Farben', url: './settings.html', height: 620 }); } },
+        { icon: { dark: ICON, light: ICON }, text: 'Sammelbestellung (CSV)',
+          callback: function (t) { return t.popup({ title: 'Sammelbestellung exportieren', url: './export.html', height: 380 }); } }
+      ];
+    }
+  }, {
+    appKey: APP_KEY,
+    appName: APP_NAME
+  });
+</script>
+</body>
+</html>
