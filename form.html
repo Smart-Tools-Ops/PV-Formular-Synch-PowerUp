@@ -259,10 +259,17 @@
     });
   }
 
+  function withTimeout(p, ms){
+    return new Promise(function(resolve, reject){
+      var done=false;
+      p.then(function(v){ if(!done){done=true;resolve(v);} }, function(e){ if(!done){done=true;reject(e);} });
+      setTimeout(function(){ if(!done){done=true;reject(new Error('Zeitüberschreitung beim Laden (keine Antwort von Trello).')); } }, ms);
+    });
+  }
   function loadBoardsInline(status, body, sb){
     status.textContent='Lade Boards…';
     startCtx = { id: cardId, idBoard: cardBoardId };
-    api(t,'GET','members/me/boards', { fields:'name', filter:'open' }).then(function(boards){
+    withTimeout(api(t,'GET','members/me/boards', { fields:'name', filter:'open' }), 9000).then(function(boards){
       body.innerHTML='';
       var bf=el('div','field'); bf.style.marginBottom='10px'; bf.appendChild(el('label',null,'Zielboard'));
       var bsel=document.createElement('select'); bsel.appendChild(new Option('— wählen —',''));
@@ -290,12 +297,12 @@
       });
     }).catch(function(e){
       var m=(e&&e.message)?e.message:String(e);
-      if(m.indexOf('401')>-1 || /invalid|unauthor/i.test(m)){
-        clearStoredToken();
-        renderAuthPanel(sb, function(){ startFlow(sb); });
-      } else {
-        status.textContent='Fehler beim Laden: '+m;
-      }
+      status.textContent='Fehler beim Laden: '+m;
+      body.innerHTML='';
+      var again=el('button','btn btn-primary','Trello-Freigabe erneut erteilen');
+      again.addEventListener('click', function(){ clearStoredToken(); renderAuthPanel(sb, function(){ startFlow(sb); }); });
+      body.appendChild(again);
+      resize();
     });
   }
 
