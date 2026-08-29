@@ -5,7 +5,7 @@
 /* ====== HIER DEINEN TRELLO-API-KEY EINTRAGEN ======
    Findest du im Power-Up-Admin unter "API-Schlüssel". Nur der KEY, nicht das Secret.
    Ohne diesen Key funktioniert die Kartensynchronisation nicht. */
-var APP_KEY = 'HIER_DEINEN_API_KEY_EINTRAGEN';
+var APP_KEY = '26a3994fa7cc750f04e2740df9ff646c';
 
 var PALETTE = ['green','blue','amber','teal','purple','rose','gray'];
 
