@@ -292,8 +292,7 @@
       var m=(e&&e.message)?e.message:String(e);
       if(m.indexOf('401')>-1 || /invalid|unauthor/i.test(m)){
         clearStoredToken();
-        showManualAuth(status, body, sb);
-        status.textContent='Der Zugriffscode wurde von Trello nicht akzeptiert. Bitte die Freigabe erneut durchführen und den Code exakt einfügen.';
+        renderAuthPanel(sb, function(){ startFlow(sb); });
       } else {
         status.textContent='Fehler beim Laden: '+m;
       }
