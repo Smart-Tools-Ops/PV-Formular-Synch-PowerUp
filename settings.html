@@ -50,17 +50,26 @@
     var empty=el('p','cfg-empty','Noch keine Optionen – unten hinzufügen.');
     var ul=el('ul','cfg-options');
     function syncEmpty(){ empty.style.display=arr.length?'none':'block'; }
-    function addLi(val){
-      var li=el('li'); li.appendChild(el('span',null,val));
-      var rm=el('button','opt-remove','×'); rm.title='Entfernen';
-      rm.addEventListener('click', function(){ var i=arr.indexOf(val); if(i>-1)arr.splice(i,1); li.remove(); syncEmpty(); scheduleSave(); });
-      li.appendChild(rm); ul.appendChild(li);
+    function renderItems(){
+      ul.innerHTML='';
+      arr.forEach(function(val, idx){
+        var li=el('li');
+        var up=el('button','opt-move','\u25B2'); up.title='Nach oben'; if(idx===0){ up.disabled=true; }
+        up.addEventListener('click', function(){ if(idx>0){ var s=arr[idx-1]; arr[idx-1]=arr[idx]; arr[idx]=s; renderItems(); scheduleSave(); } });
+        var down=el('button','opt-move','\u25BC'); down.title='Nach unten'; if(idx===arr.length-1){ down.disabled=true; }
+        down.addEventListener('click', function(){ if(idx<arr.length-1){ var s=arr[idx+1]; arr[idx+1]=arr[idx]; arr[idx]=s; renderItems(); scheduleSave(); } });
+        var span=el('span',null,val);
+        var rm=el('button','opt-remove','\u00D7'); rm.title='Entfernen';
+        rm.addEventListener('click', function(){ arr.splice(idx,1); renderItems(); syncEmpty(); scheduleSave(); });
+        li.appendChild(up); li.appendChild(down); li.appendChild(span); li.appendChild(rm);
+        ul.appendChild(li);
+      });
     }
-    arr.forEach(addLi);
+    renderItems();
     var add=el('div','cfg-add');
     var inp=el('input'); inp.type='text'; inp.placeholder='Neue Option…';
     var btn=el('button','opt-add','Hinzufügen');
-    function doAdd(){ var v=inp.value.trim(); if(!v)return; arr.push(v); addLi(v); inp.value=''; syncEmpty(); scheduleSave(); }
+    function doAdd(){ var v=inp.value.trim(); if(!v)return; arr.push(v); renderItems(); inp.value=''; syncEmpty(); scheduleSave(); }
     btn.addEventListener('click', doAdd);
     inp.addEventListener('keydown', function(e){ if(e.key==='Enter') doAdd(); });
     add.appendChild(inp); add.appendChild(btn);
