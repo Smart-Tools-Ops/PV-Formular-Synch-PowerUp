@@ -42,15 +42,15 @@
     },
 
     'show-settings': function (t) {
-      return t.popup({ title: 'Dropdown-Optionen & Farben', url: './settings.html', height: 620 });
+      return t.modal({ title: 'Dropdown-Optionen & Farben', url: './settings.html', fullscreen: false, height: 700 });
     },
 
     'board-buttons': function () {
       return [
         { icon: { dark: ICON, light: ICON }, text: 'Projektdaten-Optionen',
-          callback: function (t) { return t.popup({ title: 'Dropdown-Optionen & Farben', url: './settings.html', height: 620 }); } },
+          callback: function (t) { return t.modal({ title: 'Dropdown-Optionen & Farben', url: './settings.html', fullscreen: false, height: 700 }); } },
         { icon: { dark: ICON, light: ICON }, text: 'Sammelbestellung (CSV)',
-          callback: function (t) { return t.popup({ title: 'Sammelbestellung exportieren', url: './export.html', height: 380 }); } }
+          callback: function (t) { return t.modal({ title: 'Sammelbestellung exportieren', url: './export.html', fullscreen: false, height: 480 }); } }
       ];
     }
   }, {
