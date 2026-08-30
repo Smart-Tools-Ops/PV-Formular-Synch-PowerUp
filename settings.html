@@ -61,7 +61,9 @@
         var span=el('span',null,val);
         var rm=el('button','opt-remove','\u00D7'); rm.title='Entfernen';
         rm.addEventListener('click', function(){ arr.splice(idx,1); renderItems(); syncEmpty(); scheduleSave(); });
-        li.appendChild(up); li.appendChild(down); li.appendChild(span); li.appendChild(rm);
+        var ctrls=el('div','opt-ctrls');
+        ctrls.appendChild(up); ctrls.appendChild(down); ctrls.appendChild(rm);
+        li.appendChild(ctrls); li.appendChild(span);
         ul.appendChild(li);
       });
     }
