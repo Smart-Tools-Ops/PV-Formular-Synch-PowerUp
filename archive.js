@@ -112,13 +112,13 @@ function normAttachment(a){
 }
 
 /* ---------- Bilder laden (Browser) ---------- */
-function authHeaders(url){
-  if (/^https:\/\/(api\.)?trello\.com\/1\//.test(url) && hasToken()){
-    return { url: url.replace('https://trello.com/', 'https://api.trello.com/'),
-             headers: { 'Authorization': 'OAuth oauth_consumer_key="' + APP_KEY + '", oauth_token="' + getStoredToken() + '"' } };
-  }
-  return { url: url, headers: {} };
-}
+/* Adresse deines Cloudflare Workers (siehe bild-proxy-worker.js), z. B.
+   'https://pv-bilder.DEINNAME.workers.dev'. Leer = Bilder direkt bei Trello versuchen
+   (wird vom Browser meist blockiert). */
+var ARCHIVE_IMAGE_PROXY = '';
+
+function isTrelloApiUrl(url){ return /^https:\/\/(api\.)?trello\.com\/1\//.test(url); }
+function oauthHeader(){ return 'OAuth oauth_consumer_key="' + APP_KEY + '", oauth_token="' + getStoredToken() + '"'; }
 function fetchWithTimeout(url, opts, ms){
   return new Promise(function(resolve, reject){
     var done = false;
@@ -126,12 +126,44 @@ function fetchWithTimeout(url, opts, ms){
     fetch(url, opts).then(function(r){ if (!done){ done = true; resolve(r); } }, function(e){ if (!done){ done = true; reject(e); } });
   });
 }
-function fetchBlob(url){
-  var a = authHeaders(url);
-  return fetchWithTimeout(a.url, { headers: a.headers, credentials: 'omit' }, 25000).then(function(r){
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+function blobFrom(url, opts, label){
+  return fetchWithTimeout(url, opts, 30000).then(function(r){
+    if (!r.ok) throw new Error(label + ': HTTP ' + r.status);
     return r.blob();
+  }, function(e){
+    throw new Error(label + ': ' + ((e && e.message) || 'blockiert') + (/fetch|network|load/i.test(String(e && e.message)) ? ' (vom Browser blockiert)' : ''));
   });
+}
+/* Reihenfolge: 1. eigener Bild-Proxy, 2. Trello direkt mit Header, 3. Trello direkt mit Parametern */
+function fetchBlob(url){
+  var trello = isTrelloApiUrl(url), tok = hasToken();
+  var apiUrl = trello ? url.replace('https://trello.com/', 'https://api.trello.com/') : url;
+  var tries = [];
+  if (ARCHIVE_IMAGE_PROXY){
+    tries.push(function(){
+      var h = (trello && tok) ? { 'Authorization': oauthHeader() } : {};
+      return blobFrom(ARCHIVE_IMAGE_PROXY.replace(/\/+$/, '') + '/?url=' + encodeURIComponent(apiUrl), { headers: h, credentials: 'omit' }, 'Proxy');
+    });
+  }
+  if (trello && tok){
+    tries.push(function(){ return blobFrom(apiUrl, { headers: { 'Authorization': oauthHeader() }, credentials: 'omit' }, 'Trello'); });
+    tries.push(function(){
+      return blobFrom(apiUrl + (apiUrl.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(APP_KEY) + '&token=' + encodeURIComponent(getStoredToken()),
+                      { credentials: 'omit' }, 'Trello');
+    });
+  } else {
+    tries.push(function(){ return blobFrom(url, { credentials: 'omit' }, trello ? 'Trello (ohne Freigabe)' : 'Bildquelle'); });
+  }
+  var i = 0, firstErr = null;
+  function next(err){
+    if (err && !firstErr) firstErr = err;
+    if (i >= tries.length) return Promise.reject(firstErr || err);
+    return tries[i++]().then(function(b){
+      if (b.type && !/^image\//.test(b.type) && !/octet-stream/.test(b.type)) throw new Error('keine Bilddatei (' + b.type + ')');
+      return b;
+    }).catch(next);
+  }
+  return next();
 }
 /* Bild in ein verkleinertes JPEG umrechnen (dreht Handyfotos richtig, wandelt WebP/GIF usw. um) */
 function blobToJpeg(blob){
@@ -180,13 +212,13 @@ function loadOneImage(urls){
   function next(err){
     if (i >= urls.length) return Promise.reject(err || new Error('nicht erreichbar'));
     var u = urls[i++];
-    return fetchBlob(u).then(blobToJpeg).catch(next);
+    return fetchBlob(u).then(blobToJpeg).catch(function(e){ return next(err || e); });
   }
   return next();
 }
 /* alle benötigten Bilder: Bild-Anhänge + Bilder aus Beschreibung/Kommentaren */
 function gatherImages(card, onProgress){
-  var byKey = {}, jobs = [];
+  var byKey = {}, jobs = [], errors = [];
   var attById = {};
   card.attachments.forEach(function(a){ if (a.id) attById['att:' + String(a.id).toLowerCase()] = a; });
   function want(url, att){
@@ -200,38 +232,40 @@ function gatherImages(card, onProgress){
   texts.forEach(function(s){
     String(s || '').replace(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)/g, function(m, u){ want(u, null); return m; });
   });
-  if (!jobs.length) return Promise.resolve(byKey);
+  if (!jobs.length) return Promise.resolve({ images: byKey, total: 0, errors: errors });
 
   var idx = 0, done = 0;
   function worker(){
     if (idx >= jobs.length) return Promise.resolve();
     var job = jobs[idx++];
-    return loadOneImage(job.urls).then(function(img){ byKey[job.key] = img; }, function(){ byKey[job.key] = null; })
+    return loadOneImage(job.urls).then(function(img){ byKey[job.key] = img; }, function(e){ byKey[job.key] = null; errors.push((e && e.message) || 'unbekannt'); })
       .then(function(){ done++; if (onProgress) onProgress(done, jobs.length); return worker(); });
   }
-  return Promise.all([worker(), worker(), worker()]).then(function(){ return byKey; });
+  return Promise.all([worker(), worker(), worker()]).then(function(){ return { images: byKey, total: jobs.length, errors: errors }; });
 }
 
 /* ---------- Haupteinstieg aus form.html ---------- */
 function exportCardPdf(t, config, data, onProgress){
-  var lib, card;
+  var lib, card, imgInfo;
   return Promise.all([loadPdfLib(), collectCardForArchive(t)]).then(function(r){
     lib = r[0]; card = r[1];
     return gatherImages(card, function(d, n){ if (onProgress) onProgress('Lade Bilder ' + d + '/' + n + '…'); });
-  }).then(function(images){
+  }).then(function(res){
+    imgInfo = res;
+    if (res.errors.length && typeof console !== 'undefined') console.warn('[PDF-Archiv] Bilder nicht geladen:', res.errors);
     if (onProgress) onProgress('Erstelle PDF…');
     return buildArchivePdf(lib, {
       card: card,
       config: config,
       data: data || {},
-      images: images,
+      images: imgInfo.images,
       fields: { personalien: PERSONALIEN_FIELDS, eckdaten: ECKDATEN_FIELDS, extra: EXTRA_FIELDS },
       exportedAt: new Date()
     });
   }).then(function(bytes){
     var name = archiveFileName(card, data || {});
     downloadBytes(bytes, name);
-    return name;
+    return { name: name, imagesTotal: imgInfo.total, imagesMissing: imgInfo.errors.length, reason: imgInfo.errors[0] || '' };
   });
 }
 

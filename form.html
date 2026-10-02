@@ -177,8 +177,13 @@
     var before = dirty ? (function(){ data._updatedAt=Date.now(); return saveCardData(t, data).then(function(){
       dirty=false; saveBtn.disabled=true; statusEl.textContent='Gespeichert ✓'; statusEl.className='status saved'; }); })()
       : Promise.resolve();
-    before.then(function(){ return exportCardPdf(t, config, data, function(msg){ btn.textContent=msg; }); }).then(function(name){
-      statusEl.textContent='PDF erstellt ✓'; statusEl.className='status saved';
+    before.then(function(){ return exportCardPdf(t, config, data, function(msg){ btn.textContent=msg; }); }).then(function(r){
+      if(r && r.imagesMissing){
+        statusEl.textContent='PDF erstellt – '+r.imagesMissing+' von '+r.imagesTotal+' Bildern fehlen ('+r.reason+')';
+        statusEl.className='status dirty';
+      } else {
+        statusEl.textContent='PDF erstellt ✓'+(r && r.imagesTotal ? ' (inkl. '+r.imagesTotal+' Bilder)' : ''); statusEl.className='status saved';
+      }
     }).catch(function(e){
       statusEl.textContent='PDF-Fehler: '+((e&&e.message)||e); statusEl.className='status dirty';
     }).then(function(){ btn.disabled=false; btn.textContent=label; resize(); });
