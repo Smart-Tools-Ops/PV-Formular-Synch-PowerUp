@@ -12,6 +12,7 @@
 
 <script src="./config.js"></script>
 <script src="./sync.js"></script>
+<script src="./archive.js"></script>
 <script>
   var t = TrelloPowerUp.iframe({ appKey: APP_KEY, appName: APP_NAME });
   function resize(){ if(t && t.sizeTo){ requestAnimationFrame(function(){ t.sizeTo('#app'); }); } }
@@ -137,7 +138,10 @@
     saveBtn=el('button','btn btn-primary','💾 Speichern'); saveBtn.disabled=true;
     statusEl=el('span','status saved','Gespeichert'); 
     saveBtn.addEventListener('click', doSave);
-    bar.appendChild(saveBtn); bar.appendChild(statusEl);
+    var pdfBtn=el('button','btn btn-ghost','📄 Als PDF archivieren');
+    pdfBtn.title='Komplette Karte als PDF herunterladen';
+    pdfBtn.addEventListener('click', function(){ doArchivePdf(pdfBtn); });
+    bar.appendChild(saveBtn); bar.appendChild(pdfBtn); bar.appendChild(statusEl);
     app.appendChild(bar);
 
     // ---- Sync-Leiste (unten) ----
@@ -164,6 +168,20 @@
       statusEl.textContent='Fehler beim Speichern'; statusEl.className='status dirty';
       saveBtn.disabled=false;
     });
+  }
+
+  /* Komplette Karte als PDF – ungespeicherte Änderungen werden vorher gespeichert */
+  function doArchivePdf(btn){
+    btn.disabled=true;
+    var label=btn.textContent; btn.textContent='Erstelle PDF…';
+    var before = dirty ? (function(){ data._updatedAt=Date.now(); return saveCardData(t, data).then(function(){
+      dirty=false; saveBtn.disabled=true; statusEl.textContent='Gespeichert ✓'; statusEl.className='status saved'; }); })()
+      : Promise.resolve();
+    before.then(function(){ return exportCardPdf(t, config, data, function(msg){ btn.textContent=msg; }); }).then(function(name){
+      statusEl.textContent='PDF erstellt ✓'; statusEl.className='status saved';
+    }).catch(function(e){
+      statusEl.textContent='PDF-Fehler: '+((e&&e.message)||e); statusEl.className='status dirty';
+    }).then(function(){ btn.disabled=false; btn.textContent=label; resize(); });
   }
 
   function refreshLink(){
