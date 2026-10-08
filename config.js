@@ -5,7 +5,7 @@
 /* ====== HIER DEINEN TRELLO-API-KEY EINTRAGEN ======
    Findest du im Power-Up-Admin unter "API-Schlüssel". Nur der KEY, nicht das Secret.
    Ohne diesen Key funktioniert die Kartensynchronisation nicht. */
-var APP_KEY = '26a3994fa7cc750f04e2740df9ff646c';
+var APP_KEY = 'HIER_DEINEN_API_KEY_EINTRAGEN';
 
 var PALETTE = ['green','blue','amber','teal','purple','rose','gray'];
 
@@ -59,6 +59,7 @@ var ECKDATEN_FIELDS = [
   { key:'zweite_ebene',         label:'Zweite wasserführende Ebene',  width:33 },
   { key:'dachneigung',          label:'Dachneigung',                  width:25 },
   { key:'hausmasse',            label:'Hausmaße',                     width:25 },
+  { key:'dachkantenhoehe',      label:'Dachkantenhöhe',               width:25 },
   { key:'strompreis',           label:'Strompreis',                   width:33 },
   { key:'netzbetreiber',        label:'Netzbetreiber',                width:33 },
   { key:'jahresverbrauch',      label:'Jahres Verbrauch',             width:33 },
