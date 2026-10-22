@@ -140,6 +140,11 @@
     bar.appendChild(saveBtn); bar.appendChild(arcBtn); bar.appendChild(statusEl);
     app.appendChild(bar);
 
+    // ---- Freigabe für die Beschreibung (nur sichtbar, solange sie fehlt) ----
+    descBox=el('div','syncbar'); descBox.style.marginTop='14px'; descBox.style.marginBottom='0';
+    app.appendChild(descBox);
+    renderDescBox();
+
     resize();
   }
 
@@ -155,10 +160,144 @@
     return saveCardData(t, data).then(function(){
       dirty=false;
       statusEl.textContent='Gespeichert ✓'; statusEl.className='status saved';
-    }).catch(function(){
+    }, function(){
       statusEl.textContent='Fehler beim Speichern'; statusEl.className='status dirty';
       saveBtn.disabled=false;
       throw new Error('Speichern fehlgeschlagen');
+    }).then(function(){
+      // Beschreibung nachziehen – ein Fehler hier blockiert das Speichern nicht
+      if(!descToken) return;
+      statusEl.textContent='Gespeichert ✓ · aktualisiere Beschreibung…';
+      return syncDescription().then(function(changed){
+        statusEl.textContent='Gespeichert ✓'+(changed ? ' · Beschreibung aktualisiert' : '');
+        statusEl.className='status saved';
+      }).catch(function(e){
+        statusEl.textContent='Gespeichert ✓ · Beschreibung nicht aktualisiert: '+((e&&e.message)||e);
+        statusEl.className='status dirty';
+        if(e && e.authFailed){ descToken=null; t.remove('member','private','descToken').catch(function(){}); renderDescBox(); }
+      }).then(resize);
+    });
+  }
+
+  /* ================= Beschreibung automatisch füllen =================
+     Beim Speichern werden alle ausgefüllten Felder in einen eigenen Bereich
+     oben in der Trello-Beschreibung geschrieben. Eigener Text in der
+     Beschreibung außerhalb dieses Bereichs bleibt unverändert.
+     Dafür braucht jede Person einmalig eine Trello-Freigabe (lesen + schreiben);
+     sie wird in Trellos privatem Mitgliederspeicher abgelegt. */
+  var descToken=null, descBox=null;
+  var DESC_START=/^### ▤ .*$/m, DESC_END='*— Ende Projektdaten —*';
+
+  function mdEsc(v){
+    return String(v).replace(/\r\n?/g,'\n').trim()
+      .replace(/([\\`*_\[\]<>|])/g,'\\$1')
+      .replace(/^(\s*)([#>+-]|\d+\.)(?=\s)/gm,'$1\\$2')
+      .replace(/\n+/g,'  \n  ');           // Zeilenumbrüche innerhalb eines Listenpunkts
+  }
+  function filled(v){ return v!=null && String(v).trim()!==''; }
+  function buildDescBlock(){
+    var sections=[];
+    function section(title, lines){ if(lines.length) sections.push('**'+mdEsc(title)+'**\n'+lines.join('\n')); }
+
+    section(config.headings.personalien||'Personalien', PERSONALIEN_FIELDS.filter(function(f){ return filled(data[f.key]); })
+      .map(function(f){ return '- '+mdEsc(f.label)+': '+mdEsc(data[f.key]); }));
+    section(config.headings.eckdaten||'Eckdaten', ECKDATEN_FIELDS.filter(function(f){ return filled(data[f.key]); })
+      .map(function(f){ return '- '+mdEsc(f.label)+': '+mdEsc(data[f.key]); }));
+    var plan=config.headings.planung||'Planung';
+    (config.groups||[]).forEach(function(g){
+      section(plan+' – '+g.title, g.rows.filter(function(r){ return filled(data[r.key]) || filled(data[r.key+'_anzahl']); })
+        .map(function(r){
+          var v=data[r.key], n=data[r.key+'_anzahl'];
+          if(filled(v) && filled(n)) return '- '+mdEsc(r.label)+': '+mdEsc(v)+' ('+mdEsc(r.countLabel)+': '+mdEsc(n)+')';
+          if(filled(v)) return '- '+mdEsc(r.label)+': '+mdEsc(v);
+          return '- '+mdEsc(r.countLabel)+': '+mdEsc(n);
+        }));
+    });
+    section('Weitere Angaben', EXTRA_FIELDS.filter(function(f){ return filled(data[f.key]); })
+      .map(function(f){ return '- '+mdEsc(String(f.label).replace(/:\s*$/,''))+': '+mdEsc(data[f.key]); }));
+
+    if(!sections.length) return '';
+    return '### ▤ '+(config.headings.projekt||'Projektdaten')+'\n'+
+           '*Automatisch aus dem Formular übernommen – Änderungen bitte im Formular vornehmen.*\n\n'+
+           sections.join('\n\n')+'\n\n'+DESC_END;
+  }
+  /* Bereich in der bestehenden Beschreibung ersetzen, einfügen oder entfernen */
+  function mergeDesc(current, block){
+    current=String(current||'').replace(/\r\n?/g,'\n');
+    var m=current.match(DESC_START), rest=current;
+    if(m){
+      var endIdx=current.indexOf(DESC_END, m.index);
+      if(endIdx>-1){
+        var before=current.slice(0,m.index), after=current.slice(endIdx+DESC_END.length);
+        if(!block) return (before.replace(/\s+$/,'')+(before.trim()&&after.trim()?'\n\n':'')+after.replace(/^\s+/,'')).trim();
+        return before+block+after;
+      }
+    }
+    if(!block) return current;
+    return rest.trim() ? block+'\n\n'+rest.replace(/^\s+/,'') : block;
+  }
+
+  function trelloApi(method, path, params){
+    var q='key='+encodeURIComponent(APP_KEY)+'&token='+encodeURIComponent(descToken);
+    var opts={ method:method, credentials:'omit' };
+    if(params){
+      opts.headers={ 'Content-Type':'application/x-www-form-urlencoded' };
+      opts.body=Object.keys(params).map(function(k){ return encodeURIComponent(k)+'='+encodeURIComponent(params[k]); }).join('&');
+    }
+    return fetch('https://api.trello.com/1/'+path+(path.indexOf('?')<0?'?':'&')+q, opts).then(function(r){
+      if(r.status===401 || r.status===403){ var e=new Error('Freigabe ungültig – bitte neu erteilen'); e.authFailed=true; throw e; }
+      if(!r.ok) throw new Error('Trello antwortet mit HTTP '+r.status);
+      return r.json();
+    }, function(){ throw new Error('Trello nicht erreichbar'); });
+  }
+  function syncDescription(){
+    var cardId; try { cardId=t.getContext().card; } catch(e){}
+    if(!cardId) return Promise.reject(new Error('Karten-ID unbekannt'));
+    return trelloApi('GET','cards/'+cardId+'?fields=desc').then(function(c){
+      var next=mergeDesc(c.desc, buildDescBlock());
+      if(next.length>16384) throw new Error('Beschreibung wäre zu lang (Trello erlaubt 16.384 Zeichen)');
+      if(next===String(c.desc||'').replace(/\r\n?/g,'\n')) return false;
+      return trelloApi('PUT','cards/'+cardId, { desc: next }).then(function(){ return true; });
+    });
+  }
+
+  function renderDescBox(statusMsg){
+    if(!descBox) return;
+    descBox.innerHTML='';
+    descBox.style.display = descToken ? 'none' : '';
+    if(descToken) return;
+    descBox.appendChild(el('div','syncbar-title','Beschreibung automatisch füllen'));
+    descBox.appendChild(el('div','syncbar-text','Damit die ausgefüllten Felder beim Speichern in die Kartenbeschreibung übernommen werden, einmalig die Trello-Freigabe erteilen (gilt danach für alle Karten).'));
+    var row=el('div','syncbar-btns');
+    var bOpen=el('button','btn btn-primary','Trello-Freigabe erteilen');
+    row.appendChild(bOpen); descBox.appendChild(row);
+    var msg=el('div','syncbar-text',statusMsg||''); msg.style.margin='8px 0 0'; descBox.appendChild(msg);
+    bOpen.addEventListener('click', function(){
+      window.open('https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&name='+
+                  encodeURIComponent('PV-Work-List')+'&key='+encodeURIComponent(APP_KEY), '_blank');
+      row.innerHTML='';
+      var f=el('div','field'); f.style.margin='4px 0 10px';
+      f.appendChild(el('label',null,'Im neuen Tab „Zulassen“ klicken, dann den Code hier einfügen'));
+      var inp=document.createElement('input'); inp.type='text'; inp.placeholder='Code aus dem Trello-Tab'; f.appendChild(inp);
+      descBox.insertBefore(f, msg);
+      var bSave=el('button','btn btn-primary','Code speichern'), bCancel=el('button','btn btn-ghost','Abbrechen');
+      row.appendChild(bSave); row.appendChild(bCancel); descBox.insertBefore(row, msg);
+      bCancel.addEventListener('click', function(){ renderDescBox(); resize(); });
+      bSave.addEventListener('click', function(){
+        var tok=(inp.value||'').trim();
+        if(!tok){ msg.textContent='Bitte den Code einfügen.'; return; }
+        bSave.disabled=true; msg.textContent='Prüfe Freigabe…';
+        descToken=tok;
+        syncDescription().then(function(){
+          return t.set('member','private','descToken', tok);
+        }).then(function(){
+          renderDescBox(); statusEl.textContent='Freigabe gespeichert ✓ · Beschreibung aktualisiert'; statusEl.className='status saved'; resize();
+        }).catch(function(e){
+          descToken=null; bSave.disabled=false;
+          msg.textContent='Fehler: '+((e&&e.message)||e); resize();
+        });
+      });
+      resize();
     });
   }
 
@@ -209,8 +348,8 @@
   }
 
   function init(){
-    Promise.all([ loadConfig(t), loadCardData(t) ]).then(function(res){
-      config=res[0]; data=res[1] || {};
+    Promise.all([ loadConfig(t), loadCardData(t), t.get('member','private','descToken').catch(function(){ return null; }) ]).then(function(res){
+      config=res[0]; data=res[1] || {}; descToken=res[2] || null;
       render();
     });
   }
