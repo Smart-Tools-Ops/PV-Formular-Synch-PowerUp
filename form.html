@@ -10,6 +10,7 @@
 <body>
   <div class="wrap" id="app"></div>
 
+<script src="./produkte.js"></script>
 <script src="./config.js"></script>
 <script>
   var t = TrelloPowerUp.iframe();
@@ -27,12 +28,27 @@
     i.addEventListener('input', function(){ data[key]=i.value; markDirty(); });
     return i;
   }
+  /* options: einfache Liste ODER gruppiert [{label, items}] */
   function makeSelect(key, options){
     var s = document.createElement('select');
     s.appendChild(new Option('— bitte wählen —',''));
-    (options||[]).forEach(function(o){ s.appendChild(new Option(o,o)); });
-    if(data[key] && (options||[]).indexOf(data[key])>-1) s.value=data[key];
-    s.addEventListener('change', function(){ data[key]=s.value; markDirty(); });
+    var groups = (options && options.length && typeof options[0]==='object') ? options : [{ label:'', items:options||[] }];
+    var flat = [];
+    groups.forEach(function(g){
+      var host = s;
+      if(g.label){ host=document.createElement('optgroup'); host.label=g.label; s.appendChild(host); }
+      g.items.forEach(function(o){ host.appendChild(new Option(o,o)); flat.push(o); });
+    });
+    var cur=data[key];
+    if(cur){
+      // gespeicherter Wert wird immer angezeigt – auch bei anderer Schreibweise
+      // oder wenn das Produkt nicht mehr in der Liste steht. Der Wert bleibt unverändert.
+      var hit=flat.filter(function(o){ return o===cur; })[0] ||
+              (typeof sameName==='function' ? flat.filter(function(o){ return sameName(o,cur); })[0] : null);
+      if(hit){ s.value=hit; }
+      else { var o=new Option(cur+'  (nicht mehr in der Liste)', '__keep__'); s.insertBefore(o, s.children[1]||null); s.value='__keep__'; }
+    }
+    s.addEventListener('change', function(){ data[key]= s.value==='__keep__' ? cur : s.value; markDirty(); });
     return s;
   }
   function makeNumber(key){
@@ -111,7 +127,7 @@
         box.appendChild(el('h3','subheading', grp.title));
         grp.rows.forEach(function(r){
           var g=el('div','grid2 grid-plan');
-          g.appendChild(fieldWrap(r.label, makeSelect(r.key, r.options)));
+          g.appendChild(fieldWrap(r.label, makeSelect(r.key, typeof rowOptionGroups==='function' ? rowOptionGroups(r) : r.options)));
           g.appendChild(fieldWrap(r.countLabel, makeNumber(r.key+'_anzahl')));
           box.appendChild(g);
         });

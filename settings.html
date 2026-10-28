@@ -9,15 +9,17 @@
 </head>
 <body>
   <div class="wrap">
-    <p class="intro">Diese Einstellungen gelten boardweit für alle Karten. Änderungen werden automatisch gespeichert. Alle Produkt-Dropdowns sind zu Beginn leer – trage hier deine Artikel ein.</p>
+    <p class="intro">Diese Einstellungen gelten boardweit für alle Karten. Änderungen werden automatisch gespeichert. Die Produkte kommen aus der Produktliste (Datei <b>produkte.js</b> im GitHub-Repo). Hier kannst du pro Feld Produkte ausblenden oder eigene ergänzen.</p>
     <div id="headings"></div>
     <div id="blocks"></div>
     <div style="margin-top:16px;display:flex;align-items:center;gap:12px">
       <button id="done" class="btn btn-primary">Fertig</button>
       <span id="status" class="status saved">Gespeichert</span>
+      <span id="size" class="status" style="margin-left:auto;color:var(--muted);font-weight:500"></span>
     </div>
   </div>
 
+<script src="./produkte.js"></script>
 <script src="./config.js"></script>
 <script>
   var t = TrelloPowerUp.iframe();
@@ -25,14 +27,19 @@
 
   function el(tag, cls, txt){ var e=document.createElement(tag); if(cls)e.className=cls; if(txt!=null)e.textContent=txt; return e; }
 
+  function updateSize(){
+    var n=configSize(config), el2=document.getElementById('size');
+    if(el2){ el2.textContent='Speicher: '+n.toLocaleString('de-DE')+' / '+CONFIG_LIMIT.toLocaleString('de-DE')+' Zeichen'; el2.style.color = n>CONFIG_LIMIT ? '#d06767' : ''; }
+  }
   function scheduleSave(){
+    updateSize();
     if(statusEl){ statusEl.textContent='Speichere…'; statusEl.className='status'; }
     clearTimeout(saveTimer);
     saveTimer=setTimeout(function(){
       saveConfig(t, config).then(function(){
         if(statusEl){ statusEl.textContent='Gespeichert ✓'; statusEl.className='status saved'; }
       }).catch(function(){
-        if(statusEl){ statusEl.textContent='Fehler / evtl. zu viele Optionen'; statusEl.className='status dirty'; }
+        if(statusEl){ statusEl.textContent = configSize(config)>CONFIG_LIMIT ? 'Nicht gespeichert: zu viele eigene Einträge – bitte in produkte.js eintragen' : 'Fehler beim Speichern'; statusEl.className='status dirty'; }
       });
     }, 400);
   }
@@ -45,7 +52,8 @@
     w.appendChild(i); return w;
   }
 
-  function optionEditor(arr){
+  function optionEditor(arr, onChange){
+    var save = onChange || scheduleSave;
     var box=el('div');
     var empty=el('p','cfg-empty','Noch keine Optionen – unten hinzufügen.');
     var ul=el('ul','cfg-options');
@@ -55,12 +63,12 @@
       arr.forEach(function(val, idx){
         var li=el('li');
         var up=el('button','opt-move','\u25B2'); up.title='Nach oben'; if(idx===0){ up.disabled=true; }
-        up.addEventListener('click', function(){ if(idx>0){ var s=arr[idx-1]; arr[idx-1]=arr[idx]; arr[idx]=s; renderItems(); scheduleSave(); } });
+        up.addEventListener('click', function(){ if(idx>0){ var s=arr[idx-1]; arr[idx-1]=arr[idx]; arr[idx]=s; renderItems(); save(); } });
         var down=el('button','opt-move','\u25BC'); down.title='Nach unten'; if(idx===arr.length-1){ down.disabled=true; }
-        down.addEventListener('click', function(){ if(idx<arr.length-1){ var s=arr[idx+1]; arr[idx+1]=arr[idx]; arr[idx]=s; renderItems(); scheduleSave(); } });
+        down.addEventListener('click', function(){ if(idx<arr.length-1){ var s=arr[idx+1]; arr[idx+1]=arr[idx]; arr[idx]=s; renderItems(); save(); } });
         var span=el('span',null,val);
         var rm=el('button','opt-remove','\u00D7'); rm.title='Entfernen';
-        rm.addEventListener('click', function(){ arr.splice(idx,1); renderItems(); syncEmpty(); scheduleSave(); });
+        rm.addEventListener('click', function(){ arr.splice(idx,1); renderItems(); syncEmpty(); save(); });
         var ctrls=el('div','opt-ctrls');
         ctrls.appendChild(up); ctrls.appendChild(down); ctrls.appendChild(rm);
         li.appendChild(ctrls); li.appendChild(span);
@@ -71,11 +79,44 @@
     var add=el('div','cfg-add');
     var inp=el('input'); inp.type='text'; inp.placeholder='Neue Option…';
     var btn=el('button','opt-add','Hinzufügen');
-    function doAdd(){ var v=inp.value.trim(); if(!v)return; arr.push(v); renderItems(); inp.value=''; syncEmpty(); scheduleSave(); }
+    function doAdd(){ var v=inp.value.trim(); if(!v)return; arr.push(v); renderItems(); inp.value=''; syncEmpty(); save(); }
     btn.addEventListener('click', doAdd);
     inp.addEventListener('keydown', function(e){ if(e.key==='Enter') doAdd(); });
     add.appendChild(inp); add.appendChild(btn);
     box.appendChild(empty); box.appendChild(ul); box.appendChild(add); syncEmpty();
+    return box;
+  }
+
+  /* Produktliste (ausblendbar) + eigene Ergänzungen einer Formularzeile */
+  function rowEditor(r){
+    var box=el('div');
+    function changed(){ r.options=rowOptions(r); scheduleSave(); }
+    var cat=catalogList(r.catalog);
+    var nCat=cat.filter(function(x){ return !isHeader(x); }).length;
+    if(nCat){
+      var head=el('div',null,'Aus der Produktliste ('+nCat+')'); head.style.cssText='font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px';
+      box.appendChild(head);
+      var ul=el('ul','cfg-options');
+      cat.forEach(function(name){
+        if(isHeader(name)){ var gh=el('li',null,String(name).replace(/^##\s*/,'')); gh.style.cssText='background:none;border:none;padding:6px 2px 0;font-size:12px;font-weight:700;color:var(--muted)'; ul.appendChild(gh); return; }
+        var li=el('li'); li.style.flexDirection='row'; li.style.alignItems='center';
+        var span=el('span',null,name); span.style.flex='1';
+        var hidden=function(){ return r.hide.some(function(h){ return sameName(h,name); }); };
+        var btn=el('button','opt-move'); btn.style.width='auto'; btn.style.padding='0 8px';
+        function paint(){ var h=hidden(); span.style.opacity=h?'.45':''; span.style.textDecoration=h?'line-through':''; btn.textContent=h?'Einblenden':'Ausblenden'; }
+        btn.addEventListener('click', function(){
+          if(hidden()) r.hide=r.hide.filter(function(h){ return !sameName(h,name); }); else r.hide.push(name);
+          paint(); changed();
+        });
+        paint(); li.appendChild(span); li.appendChild(btn); ul.appendChild(li);
+      });
+      var det=document.createElement('details'); var sum=document.createElement('summary');
+      sum.textContent='anzeigen / einzelne ausblenden'; sum.style.cssText='cursor:pointer;font-size:12.5px;color:var(--muted);margin-bottom:6px';
+      det.appendChild(sum); det.appendChild(ul); box.appendChild(det);
+    }
+    var head2=el('div',null,'Eigene Ergänzungen'); head2.style.cssText='font-size:12px;font-weight:600;color:var(--muted);margin:10px 0 6px';
+    box.appendChild(head2);
+    box.appendChild(optionEditor(r.add, changed));
     return box;
   }
 
@@ -139,7 +180,7 @@
       g.rows.forEach(function(r, idx){
         var rb=el('div','cfg-row'+(idx===0?' first':''));
         rb.appendChild(labelInput(r));
-        rb.appendChild(optionEditor(r.options));
+        rb.appendChild(rowEditor(r));
         block.appendChild(rb);
       });
       host.appendChild(block);
@@ -148,10 +189,12 @@
 
   document.getElementById('done').addEventListener('click', function(){
     clearTimeout(saveTimer);
-    saveConfig(t, config).then(function(){ t.closePopup(); }).catch(function(){ t.closePopup(); });
+    saveConfig(t, config).then(function(){ t.closePopup(); }).catch(function(e){
+      if(statusEl){ statusEl.textContent='Nicht gespeichert: '+e.message; statusEl.className='status dirty'; }
+    });
   });
 
-  loadConfig(t).then(function(c){ config=c; render(); });
+  loadConfig(t).then(function(c){ config=c; render(); updateSize(); });
 </script>
 </body>
 </html>
