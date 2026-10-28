@@ -21,9 +21,12 @@ var DEFAULT_CONFIG = {
     { key:'wr',       title:'Wechselrichter',   color:'blue',   rows:[
         { key:'wechselrichter', label:'Wechselrichter',                    countLabel:'Anzahl Wechselrichter',       catalog:'wechselrichter' },
         { key:'wechselrichter2',label:'Wechselrichter 2 (z. B. Mikro-WR Balkonkraftwerk)', countLabel:'Anzahl Wechselrichter', catalog:'wechselrichter' } ]},
-    { key:'speicher', title:'Stromspeicher',    color:'amber',  rows:[
+    { key:'speicher', title:'Batteriespeichersystem 1', color:'amber',  rows:[
         { key:'bms',            label:'BMS',                               countLabel:'Anzahl BMS',                  catalog:'bms' },
         { key:'stromspeicher',  label:'Batteriemodul (Akkublöcke)',        countLabel:'Anzahl Batteriemodule',       catalog:'batteriemodul' } ]},
+    { key:'speicher2', title:'Batteriespeichersystem 2', color:'amber',  rows:[
+        { key:'bms2',           label:'BMS',                               countLabel:'Anzahl BMS',                  catalog:'bms' },
+        { key:'stromspeicher2', label:'Batteriemodul (Akkublöcke)',        countLabel:'Anzahl Batteriemodule',       catalog:'batteriemodul' } ]},
     { key:'wallbox',  title:'Wallbox',          color:'teal',   rows:[
         { key:'wallbox',        label:'Wallbox',                           countLabel:'Anzahl Wallboxen',            catalog:'wallbox' },
         { key:'wallbox_standfuss', label:'Wallbox-Standfuß',               countLabel:'Anzahl Standfüße',            catalog:'standfuss' } ]},
@@ -44,6 +47,7 @@ var DEFAULT_CONFIG = {
 /* Bezeichnungen der ersten Version – nur zum Erkennen, ob eine gespeicherte
    Bezeichnung selbst umbenannt wurde (dann bleibt sie) oder noch Standard ist. */
 var OLD_DEFAULT_LABELS = { stromspeicher:'Stromspeicher' };
+var OLD_DEFAULT_TITLES = { speicher:'Stromspeicher' };
 
 /* Feste Personalien-Felder (Reihenfolge = Anzeige). "anrede" ist ein Dropdown. */
 var PERSONALIEN_FIELDS = [
@@ -143,7 +147,7 @@ function expandConfig(stored){
                               if (stored.personalien.anrede) c.personalien.anrede = stored.personalien.anrede; }
     if (stored.eckdaten && stored.eckdaten.color) c.eckdaten.color = stored.eckdaten.color;
     Object.keys(stored.g || {}).forEach(function(k){ var g = byGroup[k], s = stored.g[k]; if (!g) return;
-      if (s.t) g.title = s.t; if (s.c) g.color = s.c; });
+      if (s.t && s.t !== OLD_DEFAULT_TITLES[k]) g.title = s.t; if (s.c) g.color = s.c; });
     Object.keys(stored.r || {}).forEach(function(k){ var r = byRow[k], s = stored.r[k]; if (!r) return;
       if (s.l) r.label = s.l; if (s.cl) r.countLabel = s.cl;
       r.add = s.add || []; r.hide = s.hide || []; });
@@ -155,7 +159,7 @@ function expandConfig(stored){
     if (stored.eckdaten && stored.eckdaten.color) c.eckdaten.color = stored.eckdaten.color;
     stored.groups.forEach(function(sg){
       var g = byGroup[sg.key];
-      if (g){ if (sg.title) g.title = sg.title; if (sg.color) g.color = sg.color; }
+      if (g){ if (sg.title && sg.title !== OLD_DEFAULT_TITLES[sg.key]) g.title = sg.title; if (sg.color) g.color = sg.color; }
       (sg.rows || []).forEach(function(sr){
         var r = byRow[sr.key]; if (!r) return;
         var oldDefault = OLD_DEFAULT_LABELS[sr.key];
